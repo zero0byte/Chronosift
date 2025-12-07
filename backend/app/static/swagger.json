@@ -1,0 +1,749 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "ChronoSift API",
+    "description": "Forensic Timeline Analysis API - Comprehensive documentation for all endpoints",
+    "version": "1.0.0",
+    "contact": {
+      "name": "ChronoSift",
+      "url": "https://github.com/yourusername/chronosift"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000/api",
+      "description": "Development server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authentication",
+      "description": "User authentication and authorization"
+    },
+    {
+      "name": "Users",
+      "description": "User management"
+    },
+    {
+      "name": "Teams",
+      "description": "Team management and membership"
+    },
+    {
+      "name": "Projects",
+      "description": "Project management and access control"
+    },
+    {
+      "name": "Timelines",
+      "description": "Timeline and entry management"
+    },
+    {
+      "name": "Transforms",
+      "description": "Data transformation templates"
+    },
+    {
+      "name": "Uploads",
+      "description": "File upload and processing"
+    },
+    {
+      "name": "Views",
+      "description": "Saved views and preferences"
+    },
+    {
+      "name": "Queries",
+      "description": "Saved search queries"
+    },
+    {
+      "name": "Enrichment",
+      "description": "Threat intelligence enrichment"
+    },
+    {
+      "name": "Comments",
+      "description": "Comments and mentions"
+    },
+    {
+      "name": "Activities",
+      "description": "Activity feed and tracking"
+    },
+    {
+      "name": "Reports",
+      "description": "Custom reports and PDF generation"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT token obtained from /api/auth/login"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "email": {"type": "string"},
+          "first_name": {"type": "string"},
+          "last_name": {"type": "string"},
+          "full_name": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "team_id": {"type": "integer"},
+          "status": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "Timeline": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "project_id": {"type": "integer"},
+          "is_master": {"type": "boolean"},
+          "entry_count": {"type": "integer"},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "Comment": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "content": {"type": "string"},
+          "user_id": {"type": "integer"},
+          "entry_id": {"type": "integer"},
+          "parent_id": {"type": "integer", "nullable": true},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "ReportTemplate": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "project_id": {"type": "integer"},
+          "template_content": {"type": "string"},
+          "config": {"type": "object"},
+          "is_public": {"type": "boolean"},
+          "category": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  },
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register a new user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": {"type": "string", "format": "email"},
+                  "password": {"type": "string", "minLength": 6},
+                  "first_name": {"type": "string"},
+                  "last_name": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {"type": "string"},
+                    "refresh_token": {"type": "string"},
+                    "user": {"$ref": "#/components/schemas/User"}
+                  }
+                }
+              }
+            }
+          },
+          "400": {"description": "Validation error"}
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Login and get JWT tokens",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": {"type": "string"},
+                  "password": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {"type": "string"},
+                    "refresh_token": {"type": "string"},
+                    "user": {"$ref": "#/components/schemas/User"}
+                  }
+                }
+              }
+            }
+          },
+          "401": {"description": "Invalid credentials"}
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "Get current user info",
+        "security": [{"BearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Current user",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/User"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects": {
+      "get": {
+        "tags": ["Projects"],
+        "summary": "List all projects user has access to",
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "query",
+            "schema": {"type": "integer"},
+            "description": "Filter by team ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {"$ref": "#/components/schemas/Project"}
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Projects"],
+        "summary": "Create a new project",
+        "security": [{"BearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "team_id"],
+                "properties": {
+                  "name": {"type": "string"},
+                  "description": {"type": "string"},
+                  "team_id": {"type": "integer"},
+                  "status": {"type": "string", "default": "active"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Project created",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Project"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{id}/search": {
+      "get": {
+        "tags": ["Projects"],
+        "summary": "Search across all timelines in a project",
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "schema": {"type": "string", "format": "date-time"}
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "schema": {"type": "string", "format": "date-time"}
+          },
+          {
+            "name": "timeline_ids",
+            "in": "query",
+            "schema": {"type": "array", "items": {"type": "integer"}}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results"
+          }
+        }
+      }
+    },
+    "/timelines": {
+      "post": {
+        "tags": ["Timelines"],
+        "summary": "Create a new timeline",
+        "security": [{"BearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "project_id"],
+                "properties": {
+                  "name": {"type": "string"},
+                  "description": {"type": "string"},
+                  "project_id": {"type": "integer"},
+                  "columns": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {"type": "string"},
+                        "column_type": {"type": "string"},
+                        "is_required": {"type": "boolean"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Timeline created",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Timeline"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/timelines/{id}": {
+      "get": {
+        "tags": ["Timelines"],
+        "summary": "Get timeline details",
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "include_entries",
+            "in": "query",
+            "schema": {"type": "boolean"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Timeline details",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Timeline"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/timelines/{timeline_id}/search": {
+      "get": {
+        "tags": ["Timelines"],
+        "summary": "Search timeline entries with advanced filtering",
+        "description": "Search timeline entries using PostgreSQL JSONB search capabilities. Supports text search, field-specific search, exact match filtering, and timestamp range filtering for time pivoting.",
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "timeline_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer"},
+            "description": "ID of the timeline to search"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {"type": "string"},
+            "description": "Text to search for across all fields (full-text search using PostgreSQL tsvector)"
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "schema": {"type": "string"},
+            "description": "Specific field name to search within (used with 'q' parameter). Examples: 'Description', 'Tags', 'Source'"
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "schema": {"type": "string"},
+            "description": "JSON-encoded filter object for exact matches or timestamp ranges. Supports two formats: 1) Exact match: {\"FieldName\": \"value\"} for JSONB containment matching. 2) Timestamp range: {\"Timestamp\": {\"start\": \"2024-01-01T00:00:00Z\", \"end\": \"2024-01-02T00:00:00Z\"}} for time pivoting.",
+            "examples": {
+              "exact_match": {
+                "value": "{\"Type\": \"Process Creation\", \"User\": \"admin\"}",
+                "summary": "Find entries where Type is 'Process Creation' and User is 'admin'"
+              },
+              "timestamp_range": {
+                "value": "{\"Timestamp\": {\"start\": \"2024-02-09T18:47:10.022Z\", \"end\": \"2024-02-09T19:57:10.022Z\"}}",
+                "summary": "Find entries within a 1-hour time window (used by Time Pivot feature)"
+              },
+              "combined": {
+                "value": "{\"Timestamp\": {\"start\": \"2024-02-09T18:00:00Z\", \"end\": \"2024-02-09T20:00:00Z\"}, \"Source\": \"Windows Event Log\"}",
+                "summary": "Combine timestamp range with exact field match"
+              }
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "schema": {"type": "string"},
+            "description": "Field name to sort results by. Defaults to entry creation time if not specified."
+          },
+          {
+            "name": "sort_dir",
+            "in": "query",
+            "schema": {"type": "string", "enum": ["asc", "desc"], "default": "asc"},
+            "description": "Sort direction: 'asc' for ascending, 'desc' for descending"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {"type": "integer", "default": 1},
+            "description": "Page number for pagination"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {"type": "integer", "default": 50},
+            "description": "Number of results per page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results with pagination metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "description": "Timeline entry with JSONB data field"
+                      }
+                    },
+                    "total": {"type": "integer", "description": "Total number of matching entries"},
+                    "page": {"type": "integer", "description": "Current page number"},
+                    "per_page": {"type": "integer", "description": "Results per page"},
+                    "pages": {"type": "integer", "description": "Total number of pages"},
+                    "query": {"type": "string", "description": "The search query that was executed"},
+                    "filter": {"type": "string", "nullable": true, "description": "The filter that was applied"}
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter JSON or search parameters",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Error"}
+              }
+            }
+          },
+          "404": {
+            "description": "Timeline not found"
+          }
+        }
+      }
+    },
+    "/comments/entry/{entry_id}": {
+      "get": {
+        "tags": ["Comments"],
+        "summary": "Get comments for a timeline entry",
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of comments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {"$ref": "#/components/schemas/Comment"}
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Comments"],
+        "summary": "Add a comment to an entry",
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer"}
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["content"],
+                "properties": {
+                  "content": {"type": "string"},
+                  "parent_id": {"type": "integer", "description": "For threaded replies"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Comment created",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Comment"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/templates": {
+      "post": {
+        "tags": ["Reports"],
+        "summary": "Create a new report template",
+        "security": [{"BearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "template_content", "project_id"],
+                "properties": {
+                  "name": {"type": "string"},
+                  "description": {"type": "string"},
+                  "project_id": {"type": "integer"},
+                  "template_content": {"type": "string", "description": "HTML/Jinja2 template"},
+                  "config": {
+                    "type": "object",
+                    "properties": {
+                      "page_size": {"type": "string", "enum": ["A4", "Letter", "Legal"]},
+                      "orientation": {"type": "string", "enum": ["portrait", "landscape"]}
+                    }
+                  },
+                  "is_public": {"type": "boolean"},
+                  "category": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Template created",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/ReportTemplate"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/projects/{project_id}/templates": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "List report templates for a project",
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of templates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {"$ref": "#/components/schemas/ReportTemplate"}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/generate": {
+      "post": {
+        "tags": ["Reports"],
+        "summary": "Generate a report from a template",
+        "security": [{"BearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["template_id", "project_id"],
+                "properties": {
+                  "template_id": {"type": "integer"},
+                  "project_id": {"type": "integer"},
+                  "timeline_id": {"type": "integer", "nullable": true},
+                  "start_date": {"type": "string", "format": "date-time"},
+                  "end_date": {"type": "string", "format": "date-time"},
+                  "entry_limit": {"type": "integer", "default": 1000},
+                  "name": {"type": "string"},
+                  "description": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Report generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {"type": "integer"},
+                    "name": {"type": "string"},
+                    "pdf_path": {"type": "string"},
+                    "entry_count": {"type": "integer"},
+                    "file_size": {"type": "integer"},
+                    "generation_time": {"type": "number"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reports/reports/{report_id}/download": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Download a generated report as PDF",
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PDF file",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
