@@ -31,6 +31,7 @@ export const ReportGenerator: React.FC<Props> = ({ projectId, timelines, onClose
   const [endDate, setEndDate] = useState('');
   const [entryLimit, setEntryLimit] = useState(1000);
   const [format, setFormat] = useState<'pdf' | 'docx'>('pdf');
+  const [reportType, setReportType] = useState<'standard' | 'ai'>('standard');
   const [generating, setGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +53,7 @@ export const ReportGenerator: React.FC<Props> = ({ projectId, timelines, onClose
   };
 
   const handleGenerate = async () => {
-    if (!selectedTemplate) {
+    if (reportType === 'standard' && !selectedTemplate) {
       setError('Please select a template');
       return;
     }
@@ -66,17 +67,28 @@ export const ReportGenerator: React.FC<Props> = ({ projectId, timelines, onClose
     setError(null);
 
     try {
-      const response = await reportsAPI.generateReport({
-        template_id: selectedTemplate,
-        project_id: projectId,
-        timeline_id: selectedTimeline || undefined,
-        start_date: startDate || undefined,
-        end_date: endDate || undefined,
-        entry_limit: entryLimit,
-        name: reportName,
-        description: description || undefined,
-        format: format,
-      });
+      let response;
+      
+      if (reportType === 'ai') {
+        response = await reportsAPI.generateAI({
+          project_id: projectId,
+          timeline_id: selectedTimeline || undefined,
+          name: reportName,
+          description: description || undefined,
+        });
+      } else {
+        response = await reportsAPI.generateReport({
+          template_id: selectedTemplate!,
+          project_id: projectId,
+          timeline_id: selectedTimeline || undefined,
+          start_date: startDate || undefined,
+          end_date: endDate || undefined,
+          entry_limit: entryLimit,
+          name: reportName,
+          description: description || undefined,
+          format: format,
+        });
+      }
 
       const report = response.data;
       onReportGenerated(report.id);
@@ -98,102 +110,238 @@ export const ReportGenerator: React.FC<Props> = ({ projectId, timelines, onClose
 
         {error && (
           <div className="alert alert-error">
-            {error}
+            <div>{error}</div>
+            {error.includes('analyzed events') && (
+              <div className="error-details">
+                <p>To generate AI reports, you need to first:</p>
+                <ol>
+                  <li>Navigate to the Analysis tab</li>
+                  <li>Run Event Prioritization or MITRE ATT&CK Mapping on your timeline events</li>
+                  <li>Then return here to generate the AI report</li>
+                </ol>
+              </div>
+            )}
           </div>
         )}
 
-        {loading ? (
-          <div className="loading-state">Loading templates...</div>
-        ) : templates.length === 0 ? (
-          <div className="empty-state">
-            <p>No report templates available for this project.</p>
-            <p className="text-muted">Create a template first to generate reports.</p>
-          </div>
-        ) : (
-          <div className="generator-form">
-            <div className="form-section">
-              <h3>1. Select Template</h3>
-              <div className="template-list">
-                {templates.map((template) => (
-                  <div
-                    key={template.id}
-                    className={`template-card ${selectedTemplate === template.id ? 'selected' : ''}`}
-                    onClick={() => setSelectedTemplate(template.id)}
-                  >
-                    <div className="template-header">
-                      <h4>{template.name}</h4>
-                      {template.category && (
-                        <span className="template-category">{template.category}</span>
+        <div className="report-type-selector">
+          <button
+            className={`type-option ${reportType === 'standard' ? 'selected' : ''}`}
+            onClick={() => setReportType('standard')}
+            disabled={generating}
+          >
+            <span className="icon">📄</span>
+            <div className="type-info">
+              <span className="label">Standard Report</span>
+              <span className="desc">Use a predefined template</span>
+            </div>
+          </button>
+          <button
+            className={`type-option ${reportType === 'ai' ? 'selected' : ''}`}
+            onClick={() => setReportType('ai')}
+            disabled={generating}
+          >
+            <span className="icon">🤖</span>
+            <div className="type-info">
+              <span className="label">AI Investigation Report</span>
+              <span className="desc">Auto-generated narrative & findings</span>
+            </div>
+          </button>
+        </div>
+
+        {reportType === 'standard' ? (
+          loading ? (
+            <div className="loading-state">Loading templates...</div>
+          ) : templates.length === 0 ? (
+            <div className="empty-state">
+              <p>No report templates available for this project.</p>
+              <p className="text-muted">Create a template first to generate reports.</p>
+            </div>
+          ) : (
+            <div className="generator-form">
+              <div className="form-section">
+                <h3>1. Select Template</h3>
+                <div className="template-list">
+                  {templates.map((template) => (
+                    <div
+                      key={template.id}
+                      className={`template-card ${selectedTemplate === template.id ? 'selected' : ''}`}
+                      onClick={() => setSelectedTemplate(template.id)}
+                    >
+                      <div className="template-header">
+                        <h4>{template.name}</h4>
+                        {template.category && (
+                          <span className="template-category">{template.category}</span>
+                        )}
+                      </div>
+                      {template.description && (
+                        <p className="template-description">{template.description}</p>
+                      )}
+                      {template.is_public && (
+                        <span className="badge-public">Public</span>
                       )}
                     </div>
-                    {template.description && (
-                      <p className="template-description">{template.description}</p>
-                    )}
-                    {template.is_public && (
-                      <span className="badge-public">Public</span>
-                    )}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
+
+              <div className="form-section">
+                <h3>2. Report Details</h3>
+                <div className="form-group">
+                  <label>Report Name *</label>
+                  <input
+                    type="text"
+                    value={reportName}
+                    onChange={(e) => setReportName(e.target.value)}
+                    placeholder="e.g., Q1 2024 Analysis"
+                    className="form-control"
+                    disabled={generating}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Description (optional)</label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Optional description"
+                    rows={2}
+                    className="form-control"
+                    disabled={generating}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Output Format</label>
+                  <div className="format-options">
+                    <label className="format-option">
+                      <input
+                        type="radio"
+                        name="format"
+                        value="pdf"
+                        checked={format === 'pdf'}
+                        onChange={() => setFormat('pdf')}
+                        disabled={generating}
+                      />
+                      <span>PDF (.pdf)</span>
+                    </label>
+                    <label className="format-option">
+                      <input
+                        type="radio"
+                        name="format"
+                        value="docx"
+                        checked={format === 'docx'}
+                        onChange={() => setFormat('docx')}
+                        disabled={generating}
+                      />
+                      <span>Word Document (.docx)</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-section">
+                <h3>3. Data Filters</h3>
+                <div className="form-group">
+                  <label>Timeline (optional)</label>
+                  <select
+                    value={selectedTimeline || ''}
+                    onChange={(e) => setSelectedTimeline(e.target.value ? Number(e.target.value) : null)}
+                    className="form-control"
+                    disabled={generating}
+                  >
+                    <option value="">All Timelines</option>
+                    {timelines.map((timeline) => (
+                      <option key={timeline.id} value={timeline.id}>
+                        {timeline.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Start Date (optional)</label>
+                    <input
+                      type="datetime-local"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="form-control"
+                      disabled={generating}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>End Date (optional)</label>
+                    <input
+                      type="datetime-local"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="form-control"
+                      disabled={generating}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Entry Limit</label>
+                  <input
+                    type="number"
+                    value={entryLimit}
+                    onChange={(e) => setEntryLimit(Number(e.target.value))}
+                    min={1}
+                    max={10000}
+                    className="form-control"
+                    disabled={generating}
+                  />
+                  <small className="form-text">Maximum number of entries to include (1-10,000)</small>
+                </div>
+              </div>
+            </div>
+          )
+        ) : (
+          <div className="generator-form">
+          <div className="ai-info-box">
+              <p>The AI will analyze significant events (High/Critical priority and MITRE mapped) to generate:</p>
+              <ul>
+                <li>Executive Summary of the incident</li>
+                <li>Key Findings organized by MITRE ATT&CK phases</li>
+                <li>Actionable Recommendations</li>
+              </ul>
+              <p className="note"><strong>Requirements:</strong> Events must be analyzed using Priority or MITRE ATT&CK mapping before generating AI reports.</p>
+              <p className="note">Note: Output will be a Word Document (.docx)</p>
             </div>
 
             <div className="form-section">
-              <h3>2. Report Details</h3>
+              <h3>1. Report Details</h3>
               <div className="form-group">
                 <label>Report Name *</label>
                 <input
                   type="text"
                   value={reportName}
                   onChange={(e) => setReportName(e.target.value)}
-                  placeholder="e.g., Q1 2024 Analysis"
+                  placeholder="e.g., Investigation Summary"
                   className="form-control"
                   disabled={generating}
                 />
               </div>
 
               <div className="form-group">
-                <label>Description (optional)</label>
+                <label>Description (Context for AI)</label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Optional description"
-                  rows={2}
+                  placeholder="Provide context about the investigation (e.g., 'Phishing investigation on endpoint X')"
+                  rows={3}
                   className="form-control"
                   disabled={generating}
                 />
-              </div>
-
-              <div className="form-group">
-                <label>Output Format</label>
-                <div className="format-options">
-                  <label className="format-option">
-                    <input
-                      type="radio"
-                      name="format"
-                      value="pdf"
-                      checked={format === 'pdf'}
-                      onChange={() => setFormat('pdf')}
-                      disabled={generating}
-                    />
-                    <span>PDF (.pdf)</span>
-                  </label>
-                  <label className="format-option">
-                    <input
-                      type="radio"
-                      name="format"
-                      value="docx"
-                      checked={format === 'docx'}
-                      onChange={() => setFormat('docx')}
-                      disabled={generating}
-                    />
-                    <span>Word Document (.docx)</span>
-                  </label>
-                </div>
+                <small className="form-text">This helps the AI understand the scope and intent of the investigation.</small>
               </div>
             </div>
 
             <div className="form-section">
-              <h3>3. Data Filters</h3>
+              <h3>2. Data Source</h3>
               <div className="form-group">
                 <label>Timeline (optional)</label>
                 <select
@@ -210,44 +358,6 @@ export const ReportGenerator: React.FC<Props> = ({ projectId, timelines, onClose
                   ))}
                 </select>
               </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Start Date (optional)</label>
-                  <input
-                    type="datetime-local"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="form-control"
-                    disabled={generating}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>End Date (optional)</label>
-                  <input
-                    type="datetime-local"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="form-control"
-                    disabled={generating}
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>Entry Limit</label>
-                <input
-                  type="number"
-                  value={entryLimit}
-                  onChange={(e) => setEntryLimit(Number(e.target.value))}
-                  min={1}
-                  max={10000}
-                  className="form-control"
-                  disabled={generating}
-                />
-                <small className="form-text">Maximum number of entries to include (1-10,000)</small>
-              </div>
             </div>
           </div>
         )}
@@ -259,9 +369,9 @@ export const ReportGenerator: React.FC<Props> = ({ projectId, timelines, onClose
           <button
             onClick={handleGenerate}
             className="btn-primary"
-            disabled={generating || !selectedTemplate || !reportName.trim() || templates.length === 0}
+            disabled={generating || (!selectedTemplate && reportType === 'standard') || !reportName.trim() || (reportType === 'standard' && templates.length === 0)}
           >
-            {generating ? 'Generating...' : 'Generate Report'}
+            {generating ? (reportType === 'ai' ? 'Analyzing...' : 'Generating...') : 'Generate Report'}
           </button>
         </div>
 
@@ -336,6 +446,26 @@ export const ReportGenerator: React.FC<Props> = ({ projectId, timelines, onClose
             background-color: #fee;
             color: #c53030;
             border: 1px solid #fc8181;
+          }
+
+          .error-details {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #fc8181;
+          }
+
+          .error-details p {
+            margin: 0 0 8px 0;
+            font-weight: 500;
+          }
+
+          .error-details ol {
+            margin: 0;
+            padding-left: 20px;
+          }
+
+          .error-details li {
+            margin-bottom: 4px;
           }
 
           .loading-state, .empty-state {
@@ -526,6 +656,94 @@ export const ReportGenerator: React.FC<Props> = ({ projectId, timelines, onClose
           .format-option span {
             font-size: 14px;
             color: #2d3748;
+          }
+
+          .report-type-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+          }
+
+          .type-option {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 16px;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: left;
+          }
+
+          .type-option:hover:not(:disabled) {
+            border-color: #cbd5e0;
+            background: #f7fafc;
+          }
+
+          .type-option.selected {
+            border-color: #3182ce;
+            background: #ebf8ff;
+          }
+
+          .type-option:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+          }
+
+          .type-option .icon {
+            font-size: 24px;
+          }
+
+          .type-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+          }
+
+          .type-info .label {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 15px;
+          }
+
+          .type-info .desc {
+            font-size: 13px;
+            color: #718096;
+            line-height: 1.4;
+          }
+
+          .ai-info-box {
+            background: #f0fff4;
+            border: 1px solid #c6f6d5;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 20px;
+          }
+
+          .ai-info-box p {
+            margin: 0 0 12px 0;
+            color: #276749;
+            font-weight: 500;
+          }
+
+          .ai-info-box ul {
+            margin: 0 0 12px 0;
+            padding-left: 20px;
+            color: #2f855a;
+          }
+
+          .ai-info-box li {
+            margin-bottom: 4px;
+          }
+
+          .ai-info-box .note {
+            margin: 0;
+            font-size: 13px;
+            color: #718096;
+            font-style: italic;
           }
 
           .generator-actions {

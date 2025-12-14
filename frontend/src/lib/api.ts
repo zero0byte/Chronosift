@@ -308,8 +308,10 @@ export const reportsAPI = {
   deleteTemplate: (templateId: number) => api.delete(`/reports/templates/${templateId}`),
   
   // Report Generation
-  generateReport: (data: { template_id: number; project_id: number; timeline_id?: number; start_date?: string; end_date?: string; entry_limit?: number; filters?: any; name?: string; description?: string }) =>
+  generateReport: (data: { template_id: number; project_id: number; timeline_id?: number; start_date?: string; end_date?: string; entry_limit?: number; filters?: any; name?: string; description?: string; format?: string }) =>
     api.post('/reports/generate', data),
+  generateAI: (data: { project_id: number; timeline_id?: number; name?: string; description?: string; model_preference?: string }) =>
+    api.post('/reports/generate-ai', data),
   listReports: (projectId: number) => api.get(`/reports/projects/${projectId}/reports`),
   getReport: (reportId: number, includeContent?: boolean) => api.get(`/reports/reports/${reportId}`, { params: includeContent ? { include_content: 'true' } : {} }),
   deleteReport: (reportId: number) => api.delete(`/reports/reports/${reportId}`),

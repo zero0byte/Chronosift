@@ -24,6 +24,7 @@ except ImportError:
 from sqlalchemy import and_, or_
 from app import db
 from app.models import Report, ReportTemplate, Timeline, TimelineEntry, Project, User
+from app.models.mitre import TimelineAnalysisResult
 
 
 class ReportService:
@@ -40,6 +41,64 @@ class ReportService:
         
         self.reports_dir = Path(reports_dir)
         self.reports_dir.mkdir(exist_ok=True)
+    
+    @staticmethod
+    def validate_llm_report_data(project_id, timeline_id=None):
+        """Validate that there is sufficient analyzed data for LLM report generation.
+        
+        Args:
+            project_id: ID of the project
+            timeline_id: Optional specific timeline ID
+            
+        Returns:
+            Dict with 'valid' (bool), 'message' (str), and optional 'details' (dict)
+        """
+        # Build query for significant event IDs
+        # We look for:
+        # 1. High/Critical priority (score >= 0.6)
+        # 2. MITRE ATT&CK mappings
+        
+        stmt = db.session.query(TimelineAnalysisResult.entry_id).join(TimelineEntry)
+        
+        if timeline_id:
+            stmt = stmt.filter(TimelineEntry.timeline_id == timeline_id)
+        else:
+            stmt = stmt.join(Timeline).filter(Timeline.project_id == project_id)
+            
+        stmt = stmt.filter(
+            db.or_(
+                db.and_(
+                    TimelineAnalysisResult.analysis_type == 'prioritization',
+                    TimelineAnalysisResult.priority_score >= 0.6
+                ),
+                db.and_(
+                    TimelineAnalysisResult.analysis_type == 'attack_mapping',
+                    TimelineAnalysisResult.mitre_technique_id.isnot(None)
+                )
+            )
+        ).distinct()
+        
+        count = stmt.count()
+        
+        if count == 0:
+            scope = f"timeline {timeline_id}" if timeline_id else f"project {project_id}"
+            return {
+                'valid': False,
+                'message': f"No analyzed events found for {scope}. Please run event prioritization or MITRE ATT&CK mapping before generating an AI report.",
+                'details': {
+                    'analyzed_events': 0,
+                    'timeline_id': timeline_id,
+                    'project_id': project_id
+                }
+            }
+        
+        return {
+            'valid': True,
+            'message': 'Sufficient analyzed data available',
+            'details': {
+                'analyzed_events': count
+            }
+        }
         
     def generate_report(self, template_id, project_id, user_id, parameters):
         """Generate a report from a template.
@@ -125,6 +184,123 @@ class ReportService:
         db.session.commit()
         
         return report
+    
+    async def generate_llm_report(self, project_id, user_id, parameters):
+        """Generate an AI-powered report.
+        
+        Args:
+            project_id: ID of the project
+            user_id: ID of the user generating the report
+            parameters: Dict with report parameters
+            
+        Returns:
+            Report: The generated report instance
+        """
+        from app.services.timeline_analysis_service import TimelineAnalysisService
+        
+        start_time = time.time()
+        timeline_service = TimelineAnalysisService()
+        
+        # Generate content
+        content = await timeline_service.generate_case_report_content(
+            project_id=project_id,
+            timeline_id=parameters.get('timeline_id'),
+            context=parameters.get('description')
+        )
+        
+        # Render HTML
+        html_content = self._render_llm_html(content, parameters)
+        
+        # Create report record
+        report = Report(
+            name=parameters.get('name', f"AI Investigation Report - {datetime.now().strftime('%Y-%m-%d')}"),
+            description=parameters.get('description', 'AI-generated forensic report'),
+            project_id=project_id,
+            timeline_id=parameters.get('timeline_id'),
+            created_by=user_id,
+            parameters=parameters,
+            html_content=html_content,
+            format='docx',  # Default to DOCX for AI reports
+            entry_count=0  # TODO: Update if we track which events were used
+        )
+        
+        db.session.add(report)
+        db.session.flush()
+        
+        # Generate DOCX
+        # Pass empty data dict as we don't use the standard data structure for this template
+        file_path = self._generate_docx(html_content, {}, report.id, {})
+        report.file_path = file_path
+        
+        # Size
+        full_path = self.reports_dir / file_path
+        if full_path.exists():
+            report.file_size = full_path.stat().st_size
+            
+        report.generation_time = time.time() - start_time
+        db.session.commit()
+        
+        return report
+
+    def _render_llm_html(self, content, parameters):
+        """Render the LLM content into HTML."""
+        template = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; }
+                h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+                h2 { color: #34495e; margin-top: 20px; }
+                .meta { color: #7f8c8d; margin-bottom: 30px; }
+                .severity-High { color: #e74c3c; font-weight: bold; }
+                .severity-Medium { color: #f39c12; font-weight: bold; }
+                .severity-Low { color: #27ae60; font-weight: bold; }
+                .finding { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
+                ul { margin-top: 10px; }
+                li { margin-bottom: 5px; }
+            </style>
+        </head>
+        <body>
+            <h1>Investigation Report</h1>
+            <div class="meta">
+                <p><strong>Generated:</strong> {{ date }}</p>
+                <p><strong>Case Context:</strong> {{ context }}</p>
+            </div>
+
+            <h1>Executive Summary</h1>
+            <div>{{ executive_summary }}</div>
+
+            <h1>Key Findings</h1>
+            {% for finding in key_findings %}
+            <div class="finding">
+                <h2>{{ finding.title }}</h2>
+                <p><strong>MITRE Phase:</strong> {{ finding.mitre_phase }}</p>
+                <p><strong>Severity:</strong> <b class="severity-{{ finding.severity }}">{{ finding.severity }}</b></p>
+                <div>{{ finding.description }}</div>
+            </div>
+            {% endfor %}
+
+            <h1>Recommendations</h1>
+            <ul>
+            {% for rec in recommendations %}
+                <li>{{ rec }}</li>
+            {% endfor %}
+            </ul>
+        </body>
+        </html>
+        """
+        
+        env = Environment(loader=BaseLoader())
+        jinja_template = env.from_string(template)
+        
+        return jinja_template.render(
+            date=datetime.now().strftime('%Y-%m-%d %H:%M'),
+            context=parameters.get('description', 'N/A'),
+            executive_summary=content.get('executive_summary', '').replace('\n', '<br>'),
+            key_findings=content.get('key_findings', []),
+            recommendations=content.get('recommendations', [])
+        )
     
     def _fetch_report_data(self, project_id, parameters):
         """Fetch timeline entries and related data for the report.
@@ -425,9 +601,17 @@ class HTMLToDocxParser(HTMLParser):
         self.bold = False
         self.italic = False
         self.underline = False
+        self.ignore_content = False
     
     def handle_starttag(self, tag, attrs):
         """Handle opening HTML tags."""
+        if tag in ['style', 'script', 'head', 'meta', 'title']:
+            self.ignore_content = True
+            return
+            
+        if self.ignore_content:
+            return
+
         if tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
             self.in_heading = int(tag[1])
             self.current_paragraph = self.document.add_heading('', level=self.in_heading)
@@ -461,6 +645,13 @@ class HTMLToDocxParser(HTMLParser):
     
     def handle_endtag(self, tag):
         """Handle closing HTML tags."""
+        if tag in ['style', 'script', 'head', 'meta', 'title']:
+            self.ignore_content = False
+            return
+
+        if self.ignore_content:
+            return
+
         if tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
             self.in_heading = None
             self.current_paragraph = None
@@ -503,6 +694,9 @@ class HTMLToDocxParser(HTMLParser):
     
     def handle_data(self, data):
         """Handle text data."""
+        if self.ignore_content:
+            return
+
         data = data.strip()
         if not data:
             return

@@ -500,6 +500,166 @@ class TimelineAnalysisService:
         
         return detected_chains
     
+    async def generate_case_report_content(
+        self,
+        timeline_id: Optional[int] = None,
+        project_id: Optional[int] = None,
+        context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate content for a forensic case report using LLM
+        
+        Args:
+            timeline_id: Specific timeline to analyze (optional)
+            project_id: Project ID (required if timeline_id not provided)
+            context: Additional context
+            
+        Returns:
+            Dict containing report sections (executive_summary, key_findings, recommendations)
+        """
+        # Fetch significant events
+        query = TimelineEntry.query
+        
+        if timeline_id:
+            query = query.filter(TimelineEntry.timeline_id == timeline_id)
+        elif project_id:
+            query = query.join(Timeline).filter(Timeline.project_id == project_id)
+        else:
+            raise ValueError("Either timeline_id or project_id must be provided")
+            
+        # Get entries that are high priority OR have MITRE mappings
+        # We'll use the 'Priority' and 'MITRE ATT&CK' fields in the JSONB data
+        # Note: This filtering logic depends on how data is stored. 
+        # Ideally we'd use the TimelineAnalysisResult table, but let's query entries directly for now
+        # to ensure we get the latest data.
+        
+        # Fetch significant events using TimelineAnalysisResult for reliability
+        # This avoids issues with denormalized data in JSONB fields
+        
+        # Build query for significant entry IDs
+        # We look for:
+        # 1. High/Critical priority (score >= 0.6)
+        # 2. MITRE ATT&CK mappings
+        
+        stmt = db.session.query(TimelineAnalysisResult.entry_id).join(TimelineEntry)
+        
+        if timeline_id:
+            stmt = stmt.filter(TimelineEntry.timeline_id == timeline_id)
+        elif project_id:
+            stmt = stmt.join(Timeline).filter(Timeline.project_id == project_id)
+            
+        stmt = stmt.filter(
+            db.or_(
+                db.and_(
+                    TimelineAnalysisResult.analysis_type == 'prioritization',
+                    TimelineAnalysisResult.priority_score >= 0.6
+                ),
+                db.and_(
+                    TimelineAnalysisResult.analysis_type == 'attack_mapping',
+                    TimelineAnalysisResult.mitre_technique_id.isnot(None)
+                )
+            )
+        ).distinct().limit(100) # Limit to 100 most significant events for context window
+        
+        significant_entry_ids = [r[0] for r in stmt.all()]
+        
+        print(f"[DEBUG] Found {len(significant_entry_ids)} significant events from AnalysisResults")
+        
+        significant_events = []
+        if significant_entry_ids:
+            # Fetch full entry data for these IDs
+            entries = TimelineEntry.query.filter(TimelineEntry.id.in_(significant_entry_ids)).all()
+            
+            # Also fetch their analysis results to enrich the context
+            analysis_results = TimelineAnalysisResult.query.filter(
+                TimelineAnalysisResult.entry_id.in_(significant_entry_ids)
+            ).all()
+            
+            # Map analysis by entry_id
+            analysis_map = {}
+            for res in analysis_results:
+                if res.entry_id not in analysis_map:
+                    analysis_map[res.entry_id] = {'priority': None, 'mitre': []}
+                
+                if res.analysis_type == 'prioritization':
+                    analysis_map[res.entry_id]['priority'] = res.priority_score
+                elif res.analysis_type == 'attack_mapping' and res.mitre_technique:
+                    analysis_map[res.entry_id]['mitre'].append(f"{res.mitre_technique.id}: {res.mitre_technique.name}")
+
+            for entry in entries:
+                data = entry.data or {}
+                analysis = analysis_map.get(entry.id, {})
+                
+                priority_score = analysis.get('priority')
+                priority_label = 'Unknown'
+                if priority_score:
+                    if priority_score >= 0.8: priority_label = 'Critical'
+                    elif priority_score >= 0.6: priority_label = 'High'
+                    elif priority_score >= 0.4: priority_label = 'Medium'
+                    else: priority_label = 'Low'
+                
+                # Use analysis data if available, fallback to JSONB data
+                mitre_info = analysis.get('mitre') or data.get('MITRE ATT&CK')
+                
+                significant_events.append({
+                    'id': entry.id,
+                    'timestamp': data.get('Timestamp') or data.get('TimeCreated') or str(entry.created_at),
+                    'description': data.get('Message') or data.get('Description') or data.get('Event') or 'No description',
+                    'priority': priority_label,
+                    'mitre': mitre_info,
+                    'source': data.get('Source Path') or data.get('Channel')
+                })
+
+        if not significant_events:
+            print("[DEBUG] No significant events found, returning empty report")
+            return {
+                "executive_summary": "No significant events found to generate a report. Please ensure events are prioritized or mapped to MITRE ATT&CK.",
+                "key_findings": [],
+                "recommendations": []
+            }
+            
+        # Limit to most relevant if too many (simple heuristic: prioritize Critical -> High -> MITRE)
+        if len(significant_events) > 100:
+            significant_events = sorted(
+                significant_events, 
+                key=lambda x: 0 if x.get('priority') == 'critical' else 1 if x.get('priority') == 'high' else 2
+            )[:100]
+
+        # Fetch existing attack chains if any
+        # This would require querying AttackChain model, skipping for now to keep it simple or we can query it
+        
+        # Build Prompt
+        prompt = f"""Analyze these forensic timeline events and generate a case report.
+        
+Context: {context or 'Digital Forensic Investigation'}
+
+Significant Events ({len(significant_events)}):
+{json.dumps(significant_events, indent=2)}
+"""
+
+        messages = [
+            {"role": "system", "content": self._get_system_prompt_report()},
+            {"role": "user", "content": prompt}
+        ]
+        
+        # Call LLM
+        response, metadata = await self.llm_service.chat_completion(
+            messages=messages,
+            temperature=0.4,
+            max_tokens=2000,
+            response_format={"type": "json_object"}
+        )
+        
+        # Parse Response
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            # Fallback parsing
+            json_match = re.search(r'```(?:json)?\s*\n?(.*)```', response, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(1))
+            raise ValueError("Failed to parse LLM response")
+
     async def analyze_timeline_batch(
         self,
         timeline_id: int,
@@ -901,6 +1061,44 @@ Your entire response must match this exact structure:
     ],
     "overall_confidence": 0.0-1.0,
     "summary": "string"
+}"""
+
+    def _get_system_prompt_report(self) -> str:
+        """Get report generation prompt from database or use default"""
+        # Try to get active custom prompt first
+        prompt = AnalysisPrompt.get_active_prompt('report')
+        if prompt:
+            return prompt.system_prompt
+        
+        # Fallback to hardcoded prompt
+        return """You are a digital forensics expert writing a formal investigation report.
+Your task is to analyze the provided timeline events and generate a professional executive summary and a detailed finding section organized by MITRE ATT&CK phases.
+
+Input Data:
+- A list of significant timeline events (High/Critical priority, or MITRE mapped).
+- Detected attack chains (if any).
+
+Output Requirements:
+1. Executive Summary: A high-level overview of the incident (Who, What, When, Why, How). 2-3 paragraphs suitable for management.
+2. Key Findings: A list of specific technical findings. Each finding must be associated with a MITRE ATT&CK tactic (e.g., Initial Access, Execution).
+3. Recommendations: Actionable steps to remediate the issues and prevent recurrence.
+
+CRITICAL: Your response must be ONLY valid JSON. Do not include ANY explanatory text.
+Response Structure:
+{
+    "executive_summary": "string (markdown allowed)",
+    "key_findings": [
+        {
+            "title": "string",
+            "description": "string (markdown allowed)",
+            "mitre_phase": "string (e.g., Initial Access)",
+            "severity": "High|Medium|Low",
+            "evidence_event_ids": [1, 2, 3]
+        }
+    ],
+    "recommendations": [
+        "string"
+    ]
 }"""
     
     def _build_prioritization_prompt(self, entry: TimelineEntry, context: Optional[str]) -> str:

@@ -5,7 +5,7 @@ import { promptAPI } from '../lib/api';
 
 interface AnalysisPrompt {
   id: number;
-  prompt_type: 'priority' | 'attack' | 'chains';
+  prompt_type: 'priority' | 'attack' | 'chains' | 'report';
   name: string;
   description: string;
   system_prompt: string;
@@ -31,7 +31,7 @@ const PromptManagement: React.FC = () => {
   
   // Form state
   const [formData, setFormData] = useState({
-    prompt_type: 'priority' as 'priority' | 'attack' | 'chains',
+    prompt_type: 'priority' as 'priority' | 'attack' | 'chains' | 'report',
     name: '',
     description: '',
     system_prompt: '',
@@ -165,6 +165,7 @@ const PromptManagement: React.FC = () => {
       case 'priority': return 'Priority Analysis';
       case 'attack': return 'MITRE ATT&CK Mapping';
       case 'chains': return 'Attack Chain Detection';
+      case 'report': return 'LLM Reporting';
       default: return type;
     }
   };
@@ -198,7 +199,7 @@ const PromptManagement: React.FC = () => {
       <div style={{ padding: '30px', maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <p style={{ color: '#aaa', fontSize: '14px', margin: 0 }}>
-            Manage analysis prompts for Priority, ATT&CK Mapping, and Chain Detection
+            Manage analysis prompts for Priority, ATT&CK Mapping, Chain Detection, and LLM Reporting
           </p>
           <button
             onClick={handleCreate}
@@ -285,6 +286,21 @@ const PromptManagement: React.FC = () => {
           >
             Chains
           </button>
+          <button
+            onClick={() => setSelectedType('report')}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: selectedType === 'report' ? '#6366f1' : '#444',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500'
+            }}
+          >
+            Report
+          </button>
         </div>
 
         {loading ? (
@@ -314,8 +330,8 @@ const PromptManagement: React.FC = () => {
                           fontSize: '12px',
                           fontWeight: '600',
                           borderRadius: '4px',
-                          backgroundColor: prompt.prompt_type === 'priority' ? 'rgba(59, 130, 246, 0.15)' : prompt.prompt_type === 'attack' ? 'rgba(147, 51, 234, 0.15)' : 'rgba(34, 197, 94, 0.15)',
-                          color: prompt.prompt_type === 'priority' ? '#60a5fa' : prompt.prompt_type === 'attack' ? '#a78bfa' : '#4ade80'
+                          backgroundColor: prompt.prompt_type === 'priority' ? 'rgba(59, 130, 246, 0.15)' : prompt.prompt_type === 'attack' ? 'rgba(147, 51, 234, 0.15)' : prompt.prompt_type === 'report' ? 'rgba(251, 146, 60, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                          color: prompt.prompt_type === 'priority' ? '#60a5fa' : prompt.prompt_type === 'attack' ? '#a78bfa' : prompt.prompt_type === 'report' ? '#fb923c' : '#4ade80'
                         }}
                       >
                         {getTypeName(prompt.prompt_type)}
@@ -458,7 +474,7 @@ const PromptManagement: React.FC = () => {
                       onChange={(e) =>
                         setFormData({
                           ...formData,
-                          prompt_type: e.target.value as 'priority' | 'attack' | 'chains',
+                          prompt_type: e.target.value as 'priority' | 'attack' | 'chains' | 'report',
                         })
                       }
                       disabled={!isCreating || (editingPrompt?.is_default ?? false)}
@@ -467,6 +483,7 @@ const PromptManagement: React.FC = () => {
                       <option value="priority">Priority Analysis</option>
                       <option value="attack">MITRE ATT&CK Mapping</option>
                       <option value="chains">Attack Chain Detection</option>
+                      <option value="report">LLM Reporting</option>
                     </select>
                   </div>
 

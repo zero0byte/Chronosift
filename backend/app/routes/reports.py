@@ -5,6 +5,7 @@ from app import db
 from app.models import Report, ReportTemplate, Project, ProjectMember
 from app.services.report_service import ReportService
 from functools import wraps
+import asyncio
 
 bp = Blueprint('reports', __name__)
 
@@ -246,6 +247,59 @@ def generate_report():
     
     except Exception as e:
         current_app.logger.error(f"Error generating report: {str(e)}")
+        return jsonify({'error': f'Failed to generate report: {str(e)}'}), 500
+
+
+@bp.route('/generate-ai', methods=['POST'])
+@jwt_required()
+@check_project_access(permission='read')
+def generate_ai_report():
+    """Generate an AI-powered forensic report."""
+    data = request.json
+    user_id = get_jwt_identity()
+    
+    if 'project_id' not in data:
+        return jsonify({'error': 'project_id required'}), 400
+        
+    project_id = data['project_id']
+    timeline_id = data.get('timeline_id')
+    
+    # Validate that there are sufficient analyzed events before proceeding
+    validation_result = ReportService.validate_llm_report_data(project_id, timeline_id)
+    if not validation_result['valid']:
+        return jsonify({
+            'error': validation_result['message'],
+            'details': validation_result.get('details')
+        }), 400
+    
+    parameters = {
+        'timeline_id': timeline_id,
+        'name': data.get('name', 'AI Investigation Report'),
+        'description': data.get('description'),
+        'model_preference': data.get('model_preference')
+    }
+    
+    try:
+        report_service = ReportService()
+        
+        # Run async method in new event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            report = loop.run_until_complete(
+                report_service.generate_llm_report(
+                    project_id=project_id,
+                    user_id=user_id,
+                    parameters=parameters
+                )
+            )
+        finally:
+            loop.close()
+        
+        return jsonify(report.to_dict()), 201
+        
+    except Exception as e:
+        current_app.logger.error(f"Error generating AI report: {str(e)}")
         return jsonify({'error': f'Failed to generate report: {str(e)}'}), 500
 
 

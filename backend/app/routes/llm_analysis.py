@@ -774,8 +774,8 @@ def create_prompt():
     data = request.get_json()
     
     # Validation
-    if 'prompt_type' not in data or data['prompt_type'] not in ['priority', 'attack', 'chains']:
-        return jsonify({'error': 'Invalid prompt_type. Must be priority, attack, or chains'}), 400
+    if 'prompt_type' not in data or data['prompt_type'] not in ['priority', 'attack', 'chains', 'report']:
+        return jsonify({'error': 'Invalid prompt_type. Must be priority, attack, chains, or report'}), 400
     
     if 'name' not in data or not data['name'].strip():
         return jsonify({'error': 'Name is required'}), 400
